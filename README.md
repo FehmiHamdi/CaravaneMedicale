@@ -20,7 +20,14 @@ Schema is created automatically on first request (`CREATE TABLE IF NOT EXISTS ..
 ## Set up Supabase (a few minutes)
 
 1. Create a free project at [supabase.com](https://supabase.com).
-2. In the project, go to **Settings → Database → Connection string → Transaction pooler** and copy the URI (port `6543`). This pooled connection string is what makes the app work correctly on serverless hosts like Vercel — using the direct connection (port 5432) instead will exhaust Postgres's connection limit under concurrent traffic.
+2. Get the **pooled** connection string (port `6543`), not the direct one (port `5432`). This matters for two reasons: Postgres has a low direct-connection limit that serverless functions burn through fast, and — more importantly — Supabase's *direct* host (`db.<ref>.supabase.co`) resolves to an **IPv6-only** address, which Vercel's functions often cannot reach at all (this caused a real outage during setup: registrations failed on Vercel with no error because the function couldn't even connect). The pooler host (`*.pooler.supabase.com`) resolves to real IPv4 addresses and works everywhere.
+   - Supabase's dashboard layout changes periodically — look for a **"Connect"** button near the top of the project page (or **Settings → Database → Connection string**), and pick **Transaction pooler**. The URI looks like:
+     ```
+     postgresql://postgres.<project-ref>:<password>@aws-<n>-<region>.pooler.supabase.com:6543/postgres
+     ```
+     Note the username becomes `postgres.<project-ref>` for the pooler (not just `postgres`).
+   - If you can't find it in the UI: the direct connection string still tells you the project ref (the part between `db.` and `.supabase.co`). The pooler lives at `aws-0-<region>.pooler.supabase.com` or `aws-1-<region>.pooler.supabase.com` on port `6543`, same password, username `postgres.<project-ref>`. Any Postgres client that reports a clean auth error (rather than "host not found") once you guess the right `<region>` confirms you've got it.
+   - **Any character in your password that isn't a plain letter/number/`.`/`-`/`_` must be percent-encoded** in the URI (e.g. `/` → `%2F`), or the connection string won't parse at all.
 3. Copy `.env.local.example` to `.env.local` and set:
    ```
    DATABASE_URL=postgresql://postgres.xxxxxxxx:your-password@aws-0-region.pooler.supabase.com:6543/postgres
