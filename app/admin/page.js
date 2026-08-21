@@ -4,12 +4,6 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { exportToExcel, exportElementToPDF } from '@/lib/exportUtils';
 
-const STATUS_LABELS = {
-  registered: 'بانتظار التوجيه',
-  waiting_specialty: 'بانتظار الكشف',
-  done: 'تم الكشف',
-};
-
 export default function AdminPage() {
   const [unlocked, setUnlocked] = useState(false);
   const [pinInput, setPinInput] = useState('');
@@ -104,35 +98,53 @@ function AdminDashboard() {
   }
 
   async function deleteSpecialty(id) {
-    if (!confirm('هل أنت متأكد من حذف هذا التخصص؟ سيتم إلغاء ربط المرضى المسندين إليه.')) return;
+    if (!confirm('هل أنت متأكد من حذف هذا التخصص؟ سيتم إلغاء توجيه المرضى المسندين إليه.')) return;
     await fetch(`/api/specialties/${id}`, { method: 'DELETE' });
     load();
   }
 
   const filteredPatients = filterSpecialty
-    ? patients.filter((p) => String(p.specialty_id) === filterSpecialty)
+    ? patients.filter((p) => p.specialties.some((s) => String(s.specialty_id) === filterSpecialty))
     : patients;
 
   const reportTitle = filterSpecialty
     ? `مرضى تخصص - ${specialties.find((s) => String(s.id) === filterSpecialty)?.name || ''}`
     : 'كل المرضى المسجلين';
 
-  const columns = [
-    { key: 'queue_number', header: 'رقم الطابور' },
-    { key: 'first_name', header: 'الاسم الأول' },
-    { key: 'last_name', header: 'اللقب' },
-    { key: 'age', header: 'العمر' },
-    { key: 'phone', header: 'الهاتف' },
-    { key: 'address', header: 'العنوان' },
-    { key: 'specialty_name', header: 'التخصص' },
-    { key: 'status_label', header: 'الحالة' },
-  ];
+  const columns = filterSpecialty
+    ? [
+        { key: 'specialty_queue_number', header: 'الرقم في التخصص' },
+        { key: 'registration_number', header: 'رقم التسجيل' },
+        { key: 'first_name', header: 'الاسم الأول' },
+        { key: 'last_name', header: 'اللقب' },
+        { key: 'age', header: 'العمر' },
+        { key: 'phone', header: 'الهاتف' },
+        { key: 'address', header: 'العنوان' },
+      ]
+    : [
+        { key: 'registration_number', header: 'رقم التسجيل' },
+        { key: 'first_name', header: 'الاسم الأول' },
+        { key: 'last_name', header: 'اللقب' },
+        { key: 'age', header: 'العمر' },
+        { key: 'phone', header: 'الهاتف' },
+        { key: 'address', header: 'العنوان' },
+        { key: 'specialties_list', header: 'التخصصات' },
+      ];
 
-  const rowsForExport = filteredPatients.map((p) => ({
-    ...p,
-    status_label: STATUS_LABELS[p.status] || p.status,
-    specialty_name: p.specialty_name || '-',
-  }));
+  let rowsForExport = filteredPatients.map((p) => {
+    if (filterSpecialty) {
+      const match = p.specialties.find((s) => String(s.specialty_id) === filterSpecialty);
+      return { ...p, specialty_queue_number: match ? match.specialty_queue_number : '-' };
+    }
+    return {
+      ...p,
+      specialties_list: p.specialties.length ? p.specialties.map((s) => s.specialty_name).join('، ') : '-',
+    };
+  });
+
+  if (filterSpecialty) {
+    rowsForExport = [...rowsForExport].sort((a, b) => a.specialty_queue_number - b.specialty_queue_number);
+  }
 
   return (
     <main className="min-h-screen p-6 max-w-6xl mx-auto">

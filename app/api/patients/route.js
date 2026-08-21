@@ -1,33 +1,35 @@
 import { NextResponse } from 'next/server';
-import db from '@/lib/db';
+import { getPool } from '@/lib/db';
 
-export async function GET(request) {
-  const { searchParams } = new URL(request.url);
-  const specialtyId = searchParams.get('specialty_id');
-  const status = searchParams.get('status');
+const PATIENT_WITH_SPECIALTIES_QUERY = `
+  SELECT
+    p.*,
+    COALESCE(
+      json_agg(
+        json_build_object(
+          'specialty_id', s.id,
+          'specialty_name', s.name,
+          'specialty_queue_number', ps.specialty_queue_number
+        )
+        ORDER BY ps.specialty_queue_number
+      ) FILTER (WHERE s.id IS NOT NULL),
+      '[]'
+    ) AS specialties
+  FROM patients p
+  LEFT JOIN patient_specialties ps ON ps.patient_id = p.id
+  LEFT JOIN specialties s ON s.id = ps.specialty_id
+  GROUP BY p.id
+  ORDER BY p.registration_number ASC
+`;
 
-  let query = `
-    SELECT p.*, s.name as specialty_name
-    FROM patients p
-    LEFT JOIN specialties s ON p.specialty_id = s.id
-    WHERE 1=1
-  `;
-  const params = [];
-  if (specialtyId) {
-    query += ' AND p.specialty_id = ?';
-    params.push(specialtyId);
-  }
-  if (status) {
-    query += ' AND p.status = ?';
-    params.push(status);
-  }
-  query += ' ORDER BY p.queue_number ASC';
-
-  const rows = db.prepare(query).all(...params);
+export async function GET() {
+  const pool = await getPool();
+  const { rows } = await pool.query(PATIENT_WITH_SPECIALTIES_QUERY);
   return NextResponse.json(rows);
 }
 
 export async function POST(request) {
+  const pool = await getPool();
   const body = await request.json();
   const { first_name, last_name, age, phone, address } = body || {};
 
@@ -35,23 +37,19 @@ export async function POST(request) {
     return NextResponse.json({ error: 'الاسم الأول واللقب مطلوبان' }, { status: 400 });
   }
 
-  const maxRow = db.prepare('SELECT COALESCE(MAX(queue_number), 0) as maxq FROM patients').get();
-  const queue_number = maxRow.maxq + 1;
-
-  const info = db
-    .prepare(
-      `INSERT INTO patients (queue_number, first_name, last_name, age, phone, address, status)
-       VALUES (?, ?, ?, ?, ?, ?, 'registered')`
-    )
-    .run(
-      queue_number,
+  const info = await pool.query(
+    `INSERT INTO patients (first_name, last_name, age, phone, address)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING *`,
+    [
       first_name.trim(),
       last_name.trim(),
       age ? Number(age) : null,
       phone ? String(phone).trim() : null,
-      address ? String(address).trim() : null
-    );
+      address ? String(address).trim() : null,
+    ]
+  );
 
-  const patient = db.prepare('SELECT * FROM patients WHERE id = ?').get(info.lastInsertRowid);
+  const patient = { ...info.rows[0], specialties: [] };
   return NextResponse.json(patient, { status: 201 });
 }

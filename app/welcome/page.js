@@ -50,7 +50,7 @@ export default function WelcomePage() {
       {lastPatient && (
         <div className="bg-green-50 border border-green-300 text-green-800 rounded-xl p-4 mb-6 text-center">
           <p className="text-sm mb-1">تم تسجيل المريض بنجاح</p>
-          <p className="text-4xl font-black">رقم الطابور: {lastPatient.queue_number}</p>
+          <p className="text-4xl font-black">رقم التسجيل: {lastPatient.registration_number}</p>
           <p className="mt-1 font-medium">
             {lastPatient.first_name} {lastPatient.last_name}
           </p>
