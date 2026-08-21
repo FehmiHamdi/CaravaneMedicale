@@ -23,6 +23,7 @@ function MedicalDashboard() {
   const [filterSpecialty, setFilterSpecialty] = useState('');
   const [loading, setLoading] = useState(true);
   const [assigning, setAssigning] = useState({});
+  const [removing, setRemoving] = useState({});
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
@@ -62,6 +63,23 @@ function MedicalDashboard() {
     }
     await load();
     setAssigning((a) => ({ ...a, [patientId]: false }));
+  }
+
+  async function removeAssignment(patientId, specialtyId) {
+    const key = `${patientId}-${specialtyId}`;
+    setError('');
+    setRemoving((r) => ({ ...r, [key]: true }));
+    try {
+      const res = await fetch(`/api/patients/${patientId}/specialties/${specialtyId}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const data = await safeJson(res).catch(() => ({}));
+        setError(data.error || 'حدث خطأ أثناء إلغاء التوجيه');
+      }
+    } catch (err) {
+      setError(err.message);
+    }
+    await load();
+    setRemoving((r) => ({ ...r, [key]: false }));
   }
 
   const specialtyWaitingList = filterSpecialty
@@ -127,9 +145,18 @@ function MedicalDashboard() {
                             {p.specialties.map((s) => (
                               <span
                                 key={s.specialty_id}
-                                className="bg-red-50 text-red-700 text-xs px-2 py-1 rounded-lg whitespace-nowrap"
+                                className="bg-red-50 text-red-700 text-xs px-2 py-1 rounded-lg whitespace-nowrap inline-flex items-center gap-1"
                               >
                                 {s.specialty_name} (#{s.specialty_queue_number})
+                                <button
+                                  onClick={() => removeAssignment(p.id, s.specialty_id)}
+                                  disabled={removing[`${p.id}-${s.specialty_id}`]}
+                                  className="text-red-500 hover:text-red-900 font-bold leading-none disabled:opacity-40"
+                                  title="إلغاء التوجيه لهذا التخصص"
+                                  aria-label="إلغاء التوجيه لهذا التخصص"
+                                >
+                                  ×
+                                </button>
                               </span>
                             ))}
                           </div>
