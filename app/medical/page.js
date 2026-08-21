@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
+import { safeJson } from '@/lib/apiClient';
 
 export default function MedicalPage() {
   const [patients, setPatients] = useState([]);
@@ -13,10 +14,16 @@ export default function MedicalPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [pRes, sRes] = await Promise.all([fetch('/api/patients'), fetch('/api/specialties')]);
-    setPatients(await pRes.json());
-    setSpecialties(await sRes.json());
-    setLoading(false);
+    setError('');
+    try {
+      const [pRes, sRes] = await Promise.all([fetch('/api/patients'), fetch('/api/specialties')]);
+      setPatients(await safeJson(pRes));
+      setSpecialties(await safeJson(sRes));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -27,14 +34,18 @@ export default function MedicalPage() {
     if (!specialtyId) return;
     setError('');
     setAssigning((a) => ({ ...a, [patientId]: true }));
-    const res = await fetch(`/api/patients/${patientId}/specialties`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ specialty_id: Number(specialtyId) }),
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      setError(data.error || 'حدث خطأ أثناء التوجيه');
+    try {
+      const res = await fetch(`/api/patients/${patientId}/specialties`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ specialty_id: Number(specialtyId) }),
+      });
+      if (!res.ok) {
+        const data = await safeJson(res).catch(() => ({}));
+        setError(data.error || 'حدث خطأ أثناء التوجيه');
+      }
+    } catch (err) {
+      setError(err.message);
     }
     await load();
     setAssigning((a) => ({ ...a, [patientId]: false }));

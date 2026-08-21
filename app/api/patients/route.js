@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
+import { withErrorHandling } from '@/lib/apiError';
 
 const PATIENT_WITH_SPECIALTIES_QUERY = `
   SELECT
@@ -22,13 +23,13 @@ const PATIENT_WITH_SPECIALTIES_QUERY = `
   ORDER BY p.registration_number ASC
 `;
 
-export async function GET() {
+export const GET = withErrorHandling(async () => {
   const pool = await getPool();
   const { rows } = await pool.query(PATIENT_WITH_SPECIALTIES_QUERY);
   return NextResponse.json(rows);
-}
+});
 
-export async function POST(request) {
+export const POST = withErrorHandling(async (request) => {
   const pool = await getPool();
   const body = await request.json();
   const { first_name, last_name, age, phone, address } = body || {};
@@ -52,4 +53,4 @@ export async function POST(request) {
 
   const patient = { ...info.rows[0], specialties: [] };
   return NextResponse.json(patient, { status: 201 });
-}
+});

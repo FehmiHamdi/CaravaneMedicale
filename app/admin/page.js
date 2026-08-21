@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { exportToExcel, exportElementToPDF } from '@/lib/exportUtils';
+import { safeJson } from '@/lib/apiClient';
 
 export default function AdminPage() {
   const [unlocked, setUnlocked] = useState(false);
@@ -57,15 +58,22 @@ function AdminDashboard() {
   const [editing, setEditing] = useState(null);
   const [editValue, setEditValue] = useState('');
   const [filterSpecialty, setFilterSpecialty] = useState('');
+  const [error, setError] = useState('');
 
   const tableRef = useRef(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [sRes, pRes] = await Promise.all([fetch('/api/specialties'), fetch('/api/patients')]);
-    setSpecialties(await sRes.json());
-    setPatients(await pRes.json());
-    setLoading(false);
+    setError('');
+    try {
+      const [sRes, pRes] = await Promise.all([fetch('/api/specialties'), fetch('/api/patients')]);
+      setSpecialties(await safeJson(sRes));
+      setPatients(await safeJson(pRes));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -154,6 +162,10 @@ function AdminDashboard() {
           → الرئيسية
         </Link>
       </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-300 text-red-700 rounded-xl p-3 mb-4">{error}</div>
+      )}
 
       <section className="mb-10">
         <h2 className="text-lg font-bold mb-3">إدارة التخصصات الطبية</h2>

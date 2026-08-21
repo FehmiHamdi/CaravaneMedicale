@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getPool } from '@/lib/db';
+import { withErrorHandling } from '@/lib/apiError';
 
-export async function POST(request, { params }) {
+export const POST = withErrorHandling(async (request, { params }) => {
   const pool = await getPool();
   const body = await request.json();
   const specialtyId = body && body.specialty_id;
@@ -45,8 +46,8 @@ export async function POST(request, { params }) {
     return NextResponse.json(insertRes.rows[0], { status: 201 });
   } catch (err) {
     await client.query('ROLLBACK');
-    return NextResponse.json({ error: 'حدث خطأ أثناء التوجيه' }, { status: 500 });
+    throw err;
   } finally {
     client.release();
   }
-}
+});

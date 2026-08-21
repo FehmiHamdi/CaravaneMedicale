@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { safeJson } from '@/lib/apiClient';
 
 const EMPTY_FORM = { first_name: '', last_name: '', age: '', phone: '', address: '' };
 
@@ -27,7 +28,7 @@ export default function WelcomePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...form, age: form.age ? Number(form.age) : null }),
       });
-      const data = await res.json();
+      const data = await safeJson(res);
       if (!res.ok) throw new Error(data.error || 'حدث خطأ أثناء التسجيل');
       setLastPatient(data);
       setForm(EMPTY_FORM);
