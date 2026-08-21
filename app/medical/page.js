@@ -3,8 +3,21 @@
 import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { safeJson } from '@/lib/apiClient';
+import PasscodeGate from '@/components/PasscodeGate';
 
 export default function MedicalPage() {
+  return (
+    <PasscodeGate
+      storageKey="caravan_medical_ok"
+      expectedCode={process.env.NEXT_PUBLIC_MEDICAL_PASSCODE || 'medicalcrt'}
+      title="المكتب الطبي - رمز الدخول"
+    >
+      <MedicalDashboard />
+    </PasscodeGate>
+  );
+}
+
+function MedicalDashboard() {
   const [patients, setPatients] = useState([]);
   const [specialties, setSpecialties] = useState([]);
   const [filterSpecialty, setFilterSpecialty] = useState('');

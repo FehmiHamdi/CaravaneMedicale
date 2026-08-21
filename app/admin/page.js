@@ -4,50 +4,18 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { exportToExcel, exportElementToPDF } from '@/lib/exportUtils';
 import { safeJson } from '@/lib/apiClient';
+import PasscodeGate from '@/components/PasscodeGate';
 
 export default function AdminPage() {
-  const [unlocked, setUnlocked] = useState(false);
-  const [pinInput, setPinInput] = useState('');
-  const [pinError, setPinError] = useState('');
-
-  useEffect(() => {
-    if (sessionStorage.getItem('caravan_admin_ok') === '1') setUnlocked(true);
-  }, []);
-
-  function tryUnlock(e) {
-    e.preventDefault();
-    const expected = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || 'admin123';
-    if (pinInput === expected) {
-      sessionStorage.setItem('caravan_admin_ok', '1');
-      setUnlocked(true);
-    } else {
-      setPinError('كلمة المرور غير صحيحة');
-    }
-  }
-
-  if (!unlocked) {
-    return (
-      <main className="min-h-screen flex items-center justify-center p-6">
-        <form onSubmit={tryUnlock} className="bg-white rounded-2xl shadow p-8 w-full max-w-sm text-center">
-          <h1 className="text-xl font-bold mb-4 text-red-700">دخول لوحة التحكم</h1>
-          <input
-            type="password"
-            value={pinInput}
-            onChange={(e) => setPinInput(e.target.value)}
-            className="input mb-3"
-            placeholder="كلمة المرور"
-          />
-          {pinError && <p className="text-red-600 text-sm mb-3">{pinError}</p>}
-          <button className="w-full bg-red-600 text-white font-bold py-2 rounded-xl">دخول</button>
-          <Link href="/" className="block mt-4 text-sm text-gray-400">
-            → الرئيسية
-          </Link>
-        </form>
-      </main>
-    );
-  }
-
-  return <AdminDashboard />;
+  return (
+    <PasscodeGate
+      storageKey="caravan_admin_ok"
+      expectedCode={process.env.NEXT_PUBLIC_ADMIN_PASSWORD || 'admin123'}
+      title="دخول لوحة التحكم"
+    >
+      <AdminDashboard />
+    </PasscodeGate>
+  );
 }
 
 function AdminDashboard() {
@@ -108,6 +76,41 @@ function AdminDashboard() {
   async function deleteSpecialty(id) {
     if (!confirm('هل أنت متأكد من حذف هذا التخصص؟ سيتم إلغاء توجيه المرضى المسندين إليه.')) return;
     await fetch(`/api/specialties/${id}`, { method: 'DELETE' });
+    load();
+  }
+
+  async function deletePatient(id) {
+    if (!confirm('هل أنت متأكد من حذف سجل هذا المريض؟ لا يمكن التراجع عن هذا الإجراء.')) return;
+    setError('');
+    try {
+      const res = await fetch(`/api/patients/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const data = await safeJson(res).catch(() => ({}));
+        setError(data.error || 'حدث خطأ أثناء الحذف');
+      }
+    } catch (err) {
+      setError(err.message);
+    }
+    load();
+  }
+
+  async function deleteAllPatients() {
+    if (
+      !confirm(
+        'هل أنت متأكد من حذف جميع سجلات المرضى؟ سيتم حذف كل المرضى وتوجيهاتهم، وستبدأ أرقام التسجيل من جديد. لا يمكن التراجع عن هذا الإجراء.'
+      )
+    )
+      return;
+    setError('');
+    try {
+      const res = await fetch('/api/patients', { method: 'DELETE' });
+      if (!res.ok) {
+        const data = await safeJson(res).catch(() => ({}));
+        setError(data.error || 'حدث خطأ أثناء حذف جميع السجلات');
+      }
+    } catch (err) {
+      setError(err.message);
+    }
     load();
   }
 
@@ -226,6 +229,60 @@ function AdminDashboard() {
           ))}
           {specialties.length === 0 && <p className="p-4 text-gray-400 text-center">لا توجد تخصصات بعد</p>}
         </div>
+      </section>
+
+      <section className="mb-10">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-lg font-bold">إدارة المرضى ({patients.length})</h2>
+          <button
+            onClick={deleteAllPatients}
+            disabled={patients.length === 0}
+            className="bg-red-700 hover:bg-red-800 text-white px-4 py-2 rounded-xl font-bold text-sm disabled:opacity-40"
+          >
+            حذف الكل
+          </button>
+        </div>
+        {patients.length === 0 ? (
+          <p className="text-gray-400 bg-white rounded-xl p-6 text-center">لا يوجد مرضى مسجلون</p>
+        ) : (
+          <div className="bg-white rounded-2xl shadow overflow-x-auto">
+            <table className="w-full text-right">
+              <thead className="bg-gray-50 text-sm text-gray-500">
+                <tr>
+                  <th className="p-3">رقم التسجيل</th>
+                  <th className="p-3">الاسم الكامل</th>
+                  <th className="p-3">العمر</th>
+                  <th className="p-3">الهاتف</th>
+                  <th className="p-3">التخصصات</th>
+                  <th className="p-3">حذف</th>
+                </tr>
+              </thead>
+              <tbody>
+                {patients.map((p) => (
+                  <tr key={p.id} className="border-t">
+                    <td className="p-3 font-bold">{p.registration_number}</td>
+                    <td className="p-3">
+                      {p.first_name} {p.last_name}
+                    </td>
+                    <td className="p-3">{p.age ?? '-'}</td>
+                    <td className="p-3">{p.phone || '-'}</td>
+                    <td className="p-3">
+                      {p.specialties.length ? p.specialties.map((s) => s.specialty_name).join('، ') : '-'}
+                    </td>
+                    <td className="p-3">
+                      <button
+                        onClick={() => deletePatient(p.id)}
+                        className="text-sm bg-red-100 text-red-700 px-3 py-1 rounded-lg hover:bg-red-200"
+                      >
+                        حذف
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
 
       <section>

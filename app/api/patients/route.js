@@ -54,3 +54,12 @@ export const POST = withErrorHandling(async (request) => {
   const patient = { ...info.rows[0], specialties: [] };
   return NextResponse.json(patient, { status: 201 });
 });
+
+// Clears every patient (and their specialty assignments, via ON DELETE CASCADE)
+// and restarts the registration-number sequence, for a fresh start between events.
+export const DELETE = withErrorHandling(async () => {
+  const pool = await getPool();
+  await pool.query('TRUNCATE TABLE patients RESTART IDENTITY CASCADE');
+  await pool.query('ALTER SEQUENCE patients_registration_seq RESTART WITH 1');
+  return NextResponse.json({ ok: true });
+});

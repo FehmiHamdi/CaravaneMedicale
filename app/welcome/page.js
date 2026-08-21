@@ -3,10 +3,23 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { safeJson } from '@/lib/apiClient';
+import PasscodeGate from '@/components/PasscodeGate';
 
 const EMPTY_FORM = { first_name: '', last_name: '', age: '', phone: '', address: '' };
 
 export default function WelcomePage() {
+  return (
+    <PasscodeGate
+      storageKey="caravan_welcome_ok"
+      expectedCode={process.env.NEXT_PUBLIC_WELCOME_PASSCODE || 'welcomecrt'}
+      title="مكتب الاستقبال - رمز الدخول"
+    >
+      <WelcomeForm />
+    </PasscodeGate>
+  );
+}
+
+function WelcomeForm() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [loading, setLoading] = useState(false);
   const [lastPatient, setLastPatient] = useState(null);
