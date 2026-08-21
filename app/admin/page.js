@@ -1,0 +1,270 @@
+'use client';
+
+import { useEffect, useState, useRef, useCallback } from 'react';
+import Link from 'next/link';
+import { exportToExcel, exportElementToPDF } from '@/lib/exportUtils';
+
+const STATUS_LABELS = {
+  registered: 'بانتظار التوجيه',
+  waiting_specialty: 'بانتظار الكشف',
+  done: 'تم الكشف',
+};
+
+export default function AdminPage() {
+  const [unlocked, setUnlocked] = useState(false);
+  const [pinInput, setPinInput] = useState('');
+  const [pinError, setPinError] = useState('');
+
+  useEffect(() => {
+    if (sessionStorage.getItem('caravan_admin_ok') === '1') setUnlocked(true);
+  }, []);
+
+  function tryUnlock(e) {
+    e.preventDefault();
+    const expected = process.env.NEXT_PUBLIC_ADMIN_PASSWORD || 'admin123';
+    if (pinInput === expected) {
+      sessionStorage.setItem('caravan_admin_ok', '1');
+      setUnlocked(true);
+    } else {
+      setPinError('كلمة المرور غير صحيحة');
+    }
+  }
+
+  if (!unlocked) {
+    return (
+      <main className="min-h-screen flex items-center justify-center p-6">
+        <form onSubmit={tryUnlock} className="bg-white rounded-2xl shadow p-8 w-full max-w-sm text-center">
+          <h1 className="text-xl font-bold mb-4 text-red-700">دخول لوحة التحكم</h1>
+          <input
+            type="password"
+            value={pinInput}
+            onChange={(e) => setPinInput(e.target.value)}
+            className="input mb-3"
+            placeholder="كلمة المرور"
+          />
+          {pinError && <p className="text-red-600 text-sm mb-3">{pinError}</p>}
+          <button className="w-full bg-red-600 text-white font-bold py-2 rounded-xl">دخول</button>
+          <Link href="/" className="block mt-4 text-sm text-gray-400">
+            → الرئيسية
+          </Link>
+        </form>
+      </main>
+    );
+  }
+
+  return <AdminDashboard />;
+}
+
+function AdminDashboard() {
+  const [specialties, setSpecialties] = useState([]);
+  const [patients, setPatients] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [newSpecialty, setNewSpecialty] = useState('');
+  const [editing, setEditing] = useState(null);
+  const [editValue, setEditValue] = useState('');
+  const [filterSpecialty, setFilterSpecialty] = useState('');
+
+  const tableRef = useRef(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const [sRes, pRes] = await Promise.all([fetch('/api/specialties'), fetch('/api/patients')]);
+    setSpecialties(await sRes.json());
+    setPatients(await pRes.json());
+    setLoading(false);
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function addSpecialty(e) {
+    e.preventDefault();
+    if (!newSpecialty.trim()) return;
+    const res = await fetch('/api/specialties', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newSpecialty.trim() }),
+    });
+    if (res.ok) {
+      setNewSpecialty('');
+      load();
+    }
+  }
+
+  async function saveEdit(id) {
+    if (!editValue.trim()) return;
+    await fetch(`/api/specialties/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: editValue.trim() }),
+    });
+    setEditing(null);
+    load();
+  }
+
+  async function deleteSpecialty(id) {
+    if (!confirm('هل أنت متأكد من حذف هذا التخصص؟ سيتم إلغاء ربط المرضى المسندين إليه.')) return;
+    await fetch(`/api/specialties/${id}`, { method: 'DELETE' });
+    load();
+  }
+
+  const filteredPatients = filterSpecialty
+    ? patients.filter((p) => String(p.specialty_id) === filterSpecialty)
+    : patients;
+
+  const reportTitle = filterSpecialty
+    ? `مرضى تخصص - ${specialties.find((s) => String(s.id) === filterSpecialty)?.name || ''}`
+    : 'كل المرضى المسجلين';
+
+  const columns = [
+    { key: 'queue_number', header: 'رقم الطابور' },
+    { key: 'first_name', header: 'الاسم الأول' },
+    { key: 'last_name', header: 'اللقب' },
+    { key: 'age', header: 'العمر' },
+    { key: 'phone', header: 'الهاتف' },
+    { key: 'address', header: 'العنوان' },
+    { key: 'specialty_name', header: 'التخصص' },
+    { key: 'status_label', header: 'الحالة' },
+  ];
+
+  const rowsForExport = filteredPatients.map((p) => ({
+    ...p,
+    status_label: STATUS_LABELS[p.status] || p.status,
+    specialty_name: p.specialty_name || '-',
+  }));
+
+  return (
+    <main className="min-h-screen p-6 max-w-6xl mx-auto">
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold text-red-700">لوحة التحكم</h1>
+        <Link href="/" className="text-sm text-gray-500 hover:text-red-600">
+          → الرئيسية
+        </Link>
+      </div>
+
+      <section className="mb-10">
+        <h2 className="text-lg font-bold mb-3">إدارة التخصصات الطبية</h2>
+        <form onSubmit={addSpecialty} className="flex gap-2 mb-4">
+          <input
+            value={newSpecialty}
+            onChange={(e) => setNewSpecialty(e.target.value)}
+            className="input"
+            placeholder="اسم تخصص جديد"
+          />
+          <button className="bg-red-600 text-white px-5 rounded-xl font-bold whitespace-nowrap">إضافة</button>
+        </form>
+        <div className="bg-white rounded-2xl shadow divide-y">
+          {specialties.map((s) => (
+            <div key={s.id} className="flex items-center justify-between p-3 gap-3">
+              {editing === s.id ? (
+                <input value={editValue} onChange={(e) => setEditValue(e.target.value)} className="input flex-1" />
+              ) : (
+                <span className="font-medium">{s.name}</span>
+              )}
+              <div className="flex gap-2 shrink-0">
+                {editing === s.id ? (
+                  <>
+                    <button
+                      onClick={() => saveEdit(s.id)}
+                      className="text-sm bg-green-100 text-green-700 px-3 py-1 rounded-lg"
+                    >
+                      حفظ
+                    </button>
+                    <button
+                      onClick={() => setEditing(null)}
+                      className="text-sm bg-gray-100 text-gray-600 px-3 py-1 rounded-lg"
+                    >
+                      إلغاء
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => {
+                        setEditing(s.id);
+                        setEditValue(s.name);
+                      }}
+                      className="text-sm bg-blue-100 text-blue-700 px-3 py-1 rounded-lg"
+                    >
+                      تعديل
+                    </button>
+                    <button
+                      onClick={() => deleteSpecialty(s.id)}
+                      className="text-sm bg-red-100 text-red-700 px-3 py-1 rounded-lg"
+                    >
+                      حذف
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          ))}
+          {specialties.length === 0 && <p className="p-4 text-gray-400 text-center">لا توجد تخصصات بعد</p>}
+        </div>
+      </section>
+
+      <section>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+          <h2 className="text-lg font-bold">التقارير والتصدير</h2>
+          <div className="flex flex-wrap gap-2 items-center">
+            <select
+              value={filterSpecialty}
+              onChange={(e) => setFilterSpecialty(e.target.value)}
+              className="input w-56"
+            >
+              <option value="">كل المرضى</option>
+              {specialties.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={() => exportToExcel(rowsForExport, columns, reportTitle)}
+              className="bg-green-600 text-white px-4 py-2 rounded-xl font-bold text-sm"
+            >
+              تصدير Excel
+            </button>
+            <button
+              onClick={() => exportElementToPDF(tableRef.current, reportTitle)}
+              className="bg-blue-600 text-white px-4 py-2 rounded-xl font-bold text-sm"
+            >
+              تصدير PDF
+            </button>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl shadow overflow-x-auto p-2">
+          <div ref={tableRef} className="p-4">
+            <h3 className="text-center font-bold text-lg mb-3">{reportTitle}</h3>
+            <table className="w-full text-right text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  {columns.map((c) => (
+                    <th key={c.key} className="p-2 border">
+                      {c.header}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rowsForExport.map((p) => (
+                  <tr key={p.id}>
+                    {columns.map((c) => (
+                      <td key={c.key} className="p-2 border">
+                        {p[c.key] ?? '-'}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {rowsForExport.length === 0 && <p className="text-center text-gray-400 p-6">لا توجد بيانات</p>}
+          </div>
+        </div>
+        {loading && <p className="text-gray-400 mt-2">...جارٍ التحميل</p>}
+      </section>
+    </main>
+  );
+}
